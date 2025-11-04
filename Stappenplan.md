@@ -1,14 +1,109 @@
-# Werkbaar stappenplan — Blackjack AI (actiegericht)
+
+# Werkbaar stappenplan — Blackjack AI (focus: geen modeltraining, teller + search)
 
 Doel van dit document
 ---------------------
-Geef een concrete set taken (met bestanden, korte instructies en acceptatiecriteria) zodat ontwikkelaars direct kunnen beginnen met implementeren en testen. Dit plan is afgestemd op een Python-implementatie met tabulaire leercomponent (geen neurale netwerken).
+Dit stappenplan is aangepast naar jullie voorkeur: we voeren geen modeltraining (geen langdurige RL-trainingsruns) uit in de MVP. In plaats daarvan focussen we op:
 
-Scope MVP (week 1)
-- Werkende simulator die rondes kan uitvoeren
-- Basic strategy module die beslissingen neemt
-- Tabulaire learner (Q-learning of Monte Carlo) die leert van episodes
-- Minimale tests en een voorbeeld-runner om training/evaluatie te starten
+- betrouwbare simulator- en handlogica,
+- een Hi‑Lo kaartteller voor state‑estimation en bet-sizing,
+- een lichte zoek/prototypinglaag (Monte Carlo rollouts / expectimax) voor actie-evaluatie,
+- duidelijke demos en tests.
+
+Waarom deze keuze
+-----------------
+- Training met Reinforced Learning is niet volgens de opdracht
+- Teller + search levert snel meetbare winst (betting + betere actie-evaluatie) en is eenvoudiger te demonstreren en te verifiëren.
+
+Scope voor MVP (week 1)
+- Werkende simulator en hand-helpers
+- Hi‑Lo teller en demonstratie van running/true count
+- Monte Carlo rollout prototype dat teller-informatie gebruikt om acties te evalueren
+- Demo-script (geen training) en minimale tests
+
+Sprint indeling (actiegericht)
+--------------------------------
+
+Sprint A — Setup & basis (0.25–0.5 dag)
+- Tasks:
+  - Repo-structuur (indien nog niet gedaan): `src/`, `src/ai/`, `tests/`, `examples/`.
+  - `requirements.txt` met optionele GUI deps in `requirements-gui.txt`.
+  - Acceptatie: `pip install -r requirements.txt` werkt.
+
+Sprint B — Core models & helpers (0.5–1 dag)
+- Tasks:
+  - `src/deck.py`: create_deck(num_decks), shuffle, draw (reeds aanwezig).
+  - `src/hand.py`: value(hand), is_blackjack, is_bust, is_soft (reeds aanwezig).
+  - Unit-tests voor hand/logica.
+
+Sprint C — Basic strategy + demo (0.5 dag)
+- Tasks:
+  - `src/ai/basic_strategy.py` (bestaande stub) uitbreiden met meer regels of houd het eenvoudig.
+  - `examples/demo.py` (reeds aanwezig) gebruikt basic strategy voor één of enkele rondes.
+
+Sprint D — Hi‑Lo Teller (0.5 dag)  <-- PRIORITEIT MVP
+- Tasks:
+  - Implementeer `src/ai/counting.py` met:
+    - `Counting` class: reset(), update(card), running_count(), true_count(remaining_decks_estimate)`
+    - eenvoudige CLI/demo printing van running/true count tijdens voorbeeld-rondes
+  - Acceptatie: demo toont lopende telling tijdens het delen van kaarten; `true_count` berekent gedeeld door geschatte resterende decks.
+
+Sprint E — Search prototype: Monte Carlo rollouts (1 dag)
+- Tasks:
+  - `src/ai/search.py` met een functie `evaluate_actions(player_hand, dealer_upcard, deck_snapshot, n_rollouts)`.
+  - Rollouts gebruiken de actuele deck-samenstelling (of gesamplede resterende kaarten) en de teller om sampling te biasen.
+  - Acceptatie: prototype vergelijkt expected reward voor `hit` vs `stand` over N rollouts en geeft de hoogste terug.
+
+Sprint F — Integratie demo + evaluatie (0.5 dag)
+- Tasks:
+  - Verbind teller en search met `examples/demo.py` zodat demo de teller toont en (optioneel) search-actie kiest.
+  - Simpele vergelijking: basic strategy vs basic+search (over enkele honderden eval-rondes) om EV-verschil te tonen.
+
+Sprint G — Tests & docs (0.5 dag)
+- Tasks:
+  - Tests: `tests/test_hand.py`, `tests/test_counting.py`, `tests/test_search_smoke.py`.
+  - Documenteer in `README.md` en `docs/` hoe je demo runt en wat de limitations zijn.
+
+Optionele uitbreidingen (later, niet MVP)
+- GUI voor visualisatie van teller en realtime stats.
+- Ruimere search-optimalisaties: caching, parallel rollouts.
+- Tabulaire RL als vervolgproject (als jullie alsnog willen trainen).
+
+Concreet: bestanden en prioriteiten
+---------------------------------
+- hoog (MVP):
+  - `src/ai/counting.py` (Hi‑Lo)
+  - `src/ai/search.py` (Monte Carlo rollouts)
+  - `examples/demo.py` (no-training demo)
+- medium:
+  - tests en docs
+- laag (later):
+  - GUI, uitgebreide search, RL training
+
+Directe next actions (kies 1)
+----------------------------
+1) Ik implementeer onmiddellijk de Hi‑Lo teller (`src/ai/counting.py`) en werk `examples/demo.py` bij om running/true count te tonen tijdens een demo-ronde. (Aanbevolen)
+2) Ik schrijf de design-notitie voor search + sampling (expectimax vs MCTS) als markdown in `docs/search_design.md` voor we code gaan schrijven.
+3) Ik bouw direct een eenvoudige Monte Carlo rollout prototype dat de teller gebruikt om deck-sampling te biasen.
+
+Checklist (MVP)
+- [x] `src/deck.py` aanwezig
+- [x] `src/hand.py` aanwezig
+- [x] `src/ai/basic_strategy.py` aanwezig
+- [x] `examples/demo.py` aanwezig (geen training)
+- [ ] `src/ai/counting.py` (Hi‑Lo) — implementeren
+- [ ] `src/ai/search.py` (Monte Carlo prototype) — implementeren
+- [ ] tests voor hand/counting/search
+- [ ] documentatie: `docs/search_design.md` en demo instructies
+
+Acceptatiecriteria MVP
+- Demo draait lokaal, toont running/true count en basic strategy action.
+- Teller werkt correct op sample decks (handmatige verificatie).
+- Search prototype kan korte rollouts uitvoeren en produceert an action-evaluation.
+
+---
+
+Als je akkoord bent met dit bijgewerkte plan, start ik direct met optie 1: implementatie van de Hi‑Lo teller en demo-integratie. Zeg "start teller" en ik begin met de code (en markeer de todo-items bij).
 
 Sprint indeling en concrete taken
 --------------------------------
@@ -121,15 +216,14 @@ Gebruik deze checklist om voortgang te tracken. Vink items aan wanneer ze klaar 
   - [x] `tests/`
   - [x] `examples/`
   - [x] `requirements.txt` (met `pytest`)
-- [ ] Core modellen
-  - [ ] `src/deck.py` — create_deck, shuffle, draw
-  - [ ] `src/hand.py` — value, usable_ace, is_blackjack, is_bust
+- [x] Core modellen
+  - [x] `src/deck.py` — create_deck, shuffle, draw, num_decks
+  - [x] `src/hand.py` — value, usable_ace, is_blackjack, is_bust
 - [ ] Game loop & rules
   - [ ] `src/game.py` — play_round(policy, rules)
 - [ ] Basic strategy
   - [ ] `src/ai/basic_strategy.py` — choose_action
-- [ ] Leercomponent (tabulair)
-  - [ ] `src/ai/learner.py` — select_action, update, save/load
+  save/load
   - [ ] `examples/train.py` — training loop en evaluation
 - [ ] Tests
   - [ ] `tests/test_hand.py`
