@@ -115,12 +115,12 @@ Gebruik deze checklist om voortgang te tracken. Vink items aan wanneer ze klaar 
 
 - [x] `README.md` — projectbeschrijving en doelen
 - [x] `Stappenplan.md` — actioneel stappenplan (dit bestand)
-- [ ] Scaffolding: mappen en basisbestanden
-  - [ ] `src/`
-  - [ ] `src/ai/`
-  - [ ] `tests/`
-  - [ ] `examples/`
-  - [ ] `requirements.txt` (met `pytest`)
+- [x] Scaffolding: mappen en basisbestanden
+  - [x] `src/`
+  - [x] `src/ai/`
+  - [x] `tests/`
+  - [x] `examples/`
+  - [x] `requirements.txt` (met `pytest`)
 - [ ] Core modellen
   - [ ] `src/deck.py` — create_deck, shuffle, draw
   - [ ] `src/hand.py` — value, usable_ace, is_blackjack, is_bust
@@ -131,13 +131,13 @@ Gebruik deze checklist om voortgang te tracken. Vink items aan wanneer ze klaar 
 - [ ] Leercomponent (tabulair)
   - [ ] `src/ai/learner.py` — select_action, update, save/load
   - [ ] `examples/train.py` — training loop en evaluation
-- [ ] Tests & CI
+- [ ] Tests
   - [ ] `tests/test_hand.py`
   - [ ] `tests/test_basic_strategy.py`
   - [ ] `tests/test_learner.py`
-  - [ ] `.github/workflows/python.yml` (CI)
-- [ ] License & contribution
-  - [ ] `LICENSE` (bijv. MIT)
-  - [ ] `CONTRIBUTING.md`
 
-Aanwijzing: ik kan automatisch de scaffolding voor je aanmaken (vink de scaffolding-item aan zodra je wilt dat ik begin). Zodra ik bestanden aanmaak of bewerk, werk ik ook de todo-lijst bij.
+- [ ] Graphical Window
+    - [ ] Win/Loss Ratio
+    - [ ] Kaarten weergeven mogelijks met A-2-...-K samen met suits
+    
+
