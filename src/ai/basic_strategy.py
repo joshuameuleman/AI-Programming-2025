@@ -1,4 +1,4 @@
-#gemaakt door Robbe Lambrechts
+# Gemaakt door Joshua Meuleman
 """Basic strategy implementation (simplified).
 
 Deze module geeft een functionele, deterministic basic strategy terug voor
@@ -113,5 +113,5 @@ def choose_action(player_hand: List[object], dealer_upcard: object, rules: dict 
 		if total == 9 and 3 <= d <= 6:
 			return "double"
 		return "hit"
-#gemaakt door Robbe Lambrechts
+# Gemaakt door Joshua Meuleman
 
