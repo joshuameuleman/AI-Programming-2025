@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from .counting import Counting
 from .basic_strategy import choose_action
+from ..hand import Hand
 
 
 class NPC:
@@ -71,6 +72,11 @@ class NPC:
 
     def choose_action(self, player_hand: Any, dealer_upcard: Any) -> str:
         """Return basic strategy action. `true_count` available for deviations later."""
-        return choose_action(player_hand, dealer_upcard)
+        # Accept either a `Hand` instance or a raw list of card objects
+        if isinstance(player_hand, Hand):
+            cards = player_hand.cards
+        else:
+            cards = player_hand
+        return choose_action(cards, dealer_upcard)
 
 # Gemaakt door Joshua Meuleman
