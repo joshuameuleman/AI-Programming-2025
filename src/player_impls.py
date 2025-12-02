@@ -10,6 +10,7 @@ from typing import Any, List, Optional
 from .hand import Hand, parse_card
 from .player import Player
 from .ai.npc import NPC
+from .ai.basic_strategy import choose_action
 
 
 class HumanPlayer(Player):
@@ -171,6 +172,69 @@ class NPCPlayer(Player):
 
     def settle(self, result: Any):
         # result expected to be a dict that includes 'net'
+        net = result.get("net", 0) if isinstance(result, dict) else 0
+        try:
+            self.bankroll += float(net)
+        except Exception:
+            pass
+
+
+class BaselinePlayer(Player):
+    """A non-counting baseline that uses basic strategy only and fixed bets.
+
+    Useful for headless simulation and comparison against the counting NPC.
+    """
+    def __init__(self, id: str, fixed_bet: int = 1):
+        super().__init__(id)
+        self.hands: List[Hand] = []
+        self.current_bets: List[int] = []
+        self.bankroll: float = 100.0
+        self.fixed_bet = int(fixed_bet)
+
+    def start_round(self):
+        self.hands = [Hand()]
+        self.current_bets = [self.fixed_bet]
+
+    def get_bet(self) -> int:
+        # always bet fixed amount (or remaining bankroll)
+        bet = min(int(self.fixed_bet), int(self.bankroll))
+        self.current_bets = [bet]
+        return bet
+
+    def receive_card(self, card: Any):
+        rank = parse_card(card)
+        if not self.hands:
+            self.hands = [Hand()]
+        self.hands[0].add(rank)
+
+    def play_hand(self, dealer_upcard: Any, game: Any) -> str:
+        actions = []
+        for idx, hand in enumerate(self.hands):
+            while True:
+                action = choose_action(hand.cards, dealer_upcard)
+                actions.append(action)
+                if action == "hit":
+                    card = game.deal_card()
+                    rank = parse_card(card)
+                    hand.add(rank)
+                    if hand.is_bust():
+                        break
+                    continue
+                if action == "double":
+                    try:
+                        self.current_bets[idx] = int(self.current_bets[idx] * 2)
+                    except Exception:
+                        pass
+                    card = game.deal_card()
+                    rank = parse_card(card)
+                    hand.add(rank)
+                    break
+                if action == "stand":
+                    break
+                break
+        return ",".join(actions)
+
+    def settle(self, result: Any):
         net = result.get("net", 0) if isinstance(result, dict) else 0
         try:
             self.bankroll += float(net)
