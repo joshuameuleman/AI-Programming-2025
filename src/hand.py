@@ -1,100 +1,127 @@
-#gemaakt door Joshua Meuleman
+"""
+# Gemaakt door Joshua Meuleman
 
+Minimal `Hand` representation for Blackjack. Provides value calculation with Aces.
 
-"""Hand utilities voor Blackjack.
-
-Bevat functies om kaartranks te parsen, handwaarde te berekenen
-en veelvoorkomende helpers zoals is_blackjack en is_bust.
 """
 from typing import List, Tuple
 
 
-def parse_card(card: str) -> str:
-    """Return het rank-gedeelte van een kaart-string of dict.
+class Hand:
+    def __init__(self):
+        self.cards: List[str] = []
 
-    Ondersteunt twee vormen die we in deze repo kunnen gebruiken:
-    - dict met keys 'rank' en 'suit' (bijv. {'rank':'A','suit':'Hearts'})
-    - string zoals 'A♠' of '10♥' (in dat geval return alles behalve het laatste teken)
+    def add(self, card: str):
+        self.cards.append(card)
+
+    def values(self) -> List[int]:
+        """Return all possible hand values considering Aces as 1 or 11."""
+        values = [0]
+        for c in self.cards:
+            if c in ("J", "Q", "K"):
+                add = 10
+            elif c == "A":
+                # Ace as 1 or 11
+                new = []
+                for v in values:
+                    new.append(v + 1)
+                    new.append(v + 11)
+                values = new
+                continue
+            else:
+                add = int(c)
+            values = [v + add for v in values]
+        return sorted(set(values))
+
+    def best_value(self) -> int:
+        vals = [v for v in self.values() if v <= 21]
+        if vals:
+            return max(vals)
+        return min(self.values()) if self.values() else 0
+
+    def is_blackjack(self) -> bool:
+        return len(self.cards) == 2 and self.best_value() == 21
+
+    def is_bust(self) -> bool:
+        return all(v > 21 for v in self.values())
+
+
+# Utility: parse card dict or string into normalized rank
+def parse_card(card) -> str:
+    """Normalize a card (dict with 'rank' or a rank string) to short rank.
+
+    Examples:
+    - {'rank':'Jack'} -> 'J'
+    - {'rank':'10'} -> '10'
+    - 'Ace' -> 'A'
+    - 'K' -> 'K'
     """
     if isinstance(card, dict):
-        return card.get('rank')
-    if isinstance(card, str):
-        # als kaart als "10" gevolgd door suit kan de rank meerdere tekens zijn
-        # hier gaan we ervanuit dat suit één teken is (zoals '♠' of een woord-suit kan voorkomen)
-        # als suit een woord is (bijv. 'Hearts') dan is de input vaak een dict; fallback hieronder
-        if len(card) <= 2:
-            return card[:-1] if len(card) > 1 else card
-        # fallback: probeer splitsen op space of ' of '
-        if ' of ' in card:
-            return card.split(' of ')[0]
-        return card[:-1]
-    raise TypeError("Unsupported card type: expected dict or str")
+        rank = card.get("rank")
+    else:
+        rank = card
+    if not isinstance(rank, str):
+        rank = str(rank)
+    rank = rank.strip()
+    mapping = {
+        "Jack": "J",
+        "Queen": "Q",
+        "King": "K",
+        "Ace": "A",
+        "J": "J",
+        "Q": "Q",
+        "K": "K",
+        "A": "A",
+    }
+    # numeric ranks like '2','10' should pass through
+    return mapping.get(rank, rank)
+
+
+# Gemaakt door Joshua Meuleman
 
 
 def card_value(rank: str) -> int:
-    """Geef de minimale waarde van een rank terug (A = 1, J/Q/K = 10)."""
-    if rank is None:
-        raise ValueError("rank is None")
-    r = str(rank)
-    if r in ("J", "Q", "K", "Jack", "Queen", "King"):
+    """Return numeric card value for comparisons (Ace counted as 11)."""
+    r = parse_card(rank)
+    if r == "A":
+        return 11
+    if r in ("J", "Q", "K"):
         return 10
-    if r in ("A", "Ace"):
-        return 1
-    return int(r)
+    try:
+        return int(r)
+    except Exception:
+        return 0
 
 
-def value(hand: List[object]) -> Tuple[int, bool]:
-    """Bereken de beste waarde voor een hand en of er een usable ace is.
+def value(cards) -> Tuple[int, bool]:
+    """Compute total and whether hand is soft (usable ace).
 
-    Retourneert (best_value, usable_ace_bool).
-    Usable ace betekent dat één ace als 11 gebruikt wordt zonder te busten.
+    cards: list of card dicts or strings
+    Returns: (total, usable_ace)
     """
-    ranks = [parse_card(c) for c in hand]
+    ranks = [parse_card(c) for c in cards]
     total = 0
     aces = 0
     for r in ranks:
-        v = card_value(r)
-        total += v
-        if str(r) in ("A", "Ace"):
+        if r == "A":
             aces += 1
-
-    usable_ace = False
-    # Probeer één ace als 11 te tellen (extra +10) indien mogelijk
-    if aces > 0 and total + 10 <= 21:
+            total += 1
+        elif r in ("J", "Q", "K"):
+            total += 10
+        else:
+            try:
+                total += int(r)
+            except Exception:
+                total += 0
+    usable = False
+    # upgrade one ace from 1 to 11 if it doesn't bust
+    if aces and total + 10 <= 21:
         total += 10
-        usable_ace = True
-
-    return total, usable_ace
-
-
-def is_blackjack(hand: List[object]) -> bool:
-    v, _ = value(hand)
-    return len(hand) == 2 and v == 21
+        usable = True
+    return total, usable
 
 
-def is_bust(hand: List[object]) -> bool:
-    v, _ = value(hand)
-    return v > 21
-
-
-def is_soft(hand: List[object]) -> bool:
-    """Return True als hand een usable ace heeft (soft hand)."""
-    _, usable = value(hand)
-    return usable
-
-
-def is_pair(hand: List[object]) -> bool:
-    """Return True als de hand uit precies twee kaarten bestaat met gelijke rank.
-
-    Voor 10-waardes (10, J, Q, K) worden deze als gelijk behandeld.
-    Ondersteunt kaart als dict {'rank','suit'} of string.
-    """
-    if len(hand) != 2:
+def is_pair(cards) -> bool:
+    if not cards or len(cards) < 2:
         return False
-    r1 = parse_card(hand[0])
-    r2 = parse_card(hand[1])
-    ten_set = {"10", "J", "Q", "K", "Jack", "Queen", "King"}
-    if r1 in ten_set and r2 in ten_set:
-        return True
-    return r1 == r2
-#gemaakt door Joshua Meuleman
+    return parse_card(cards[0]) == parse_card(cards[1])
