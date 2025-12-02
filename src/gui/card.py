@@ -1,18 +1,4 @@
-"""Card GUI helpers: laad en toon eigen kaartafbeeldingen.
-
-Gebruikvoorbeeld:
-	from tkinter import Tk
-	from src.gui.card import CardWidget
-
-	root = Tk()
-	cw = CardWidget(root, card={'rank':'A','suit':'Spades'})
-	cw.pack()
-	root.mainloop()
-
-Plaats je eigen kaartafbeeldingen in `assets/cards/` (relatief aan de project root)
-met bestandsnamen zoals `A_of_Spades.png`, `10_of_Hearts.png` of `K_Hearts.png`.
-De loader probeert meerdere naamformaten voordat hij een fallback tekent.
-"""
+##gemaakt door Robbe Lambrechts
 
 import os
 from typing import Optional
@@ -139,3 +125,4 @@ class CardWidget(tk.Label):
 			canvas.pack(fill='both', expand=True)
 			self._image_ref = canvas
 
+##gemaakt door Robbe Lambrechts
