@@ -123,9 +123,6 @@ class NPCPlayer(Player):
         self.hands = [Hand()]
         self.current_bets = [0]
 
-    def start_round(self):
-        self.hands = [Hand()]
-
     def get_bet(self) -> int:
         b = self.npc.recommended_bet()
         # ensure not exceeding bankroll
