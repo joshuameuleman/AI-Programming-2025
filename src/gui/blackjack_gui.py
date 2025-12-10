@@ -1,7 +1,7 @@
 #gemaakt door Joshua Meuleman
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 from PIL import Image, ImageTk
 import os
 from src.game import Game
@@ -21,6 +21,23 @@ class BlackjackGUI:
         
         # Game state
         self.game = Game()
+        # Ask once for number of decks before first play
+        try:
+            decks = simpledialog.askinteger(
+                "Aantal decks",
+                "Hoeveel decks wil je gebruiken?",
+                parent=self.root,
+                minvalue=1,
+                maxvalue=12,
+                initialvalue=self.game.num_decks,
+            )
+            if decks is None:
+                decks = self.game.num_decks
+            self.game.num_decks = int(decks)
+        except Exception:
+            # fallback to default if dialog fails
+            pass
+
         self.game.start_shoe()
         self.dealer = Dealer()
         self.npc = NPC()
@@ -39,15 +56,22 @@ class BlackjackGUI:
         
         # Build UI
         self._build_ui()
+        # Ask the player which playmat to use, then load it
+        try:
+            self._choose_playmat()
+        except Exception:
+            # if chooser fails, continue with default
+            self.playmat_choice = None
         self._load_playmat()
         
     def _load_playmat(self):
         """Load playmat and prepare for responsive scaling."""
-        playmat_path = os.path.join(
-            os.path.dirname(__file__),
-            "playmats",
-            "black&gold.png"
-        )
+        playmats_dir = os.path.join(os.path.dirname(__file__), "playmats")
+        # If a playmat was chosen use that, otherwise fall back to default
+        if hasattr(self, 'playmat_choice') and self.playmat_choice:
+            playmat_path = os.path.join(playmats_dir, self.playmat_choice)
+        else:
+            playmat_path = os.path.join(playmats_dir, "black&gold.png")
 
         self.playmat_original = None
         if os.path.exists(playmat_path):
@@ -60,6 +84,112 @@ class BlackjackGUI:
             self._resize_playmat(initial=True)
             # update image on canvas resize
             self.canvas.bind("<Configure>", self._resize_playmat)
+
+    def _choose_playmat(self):
+        """Show a modal dialog listing available playmat images and let the user choose one.
+
+        Displays a thumbnail preview that updates when the selection changes.
+        """
+        playmats_dir = os.path.join(os.path.dirname(__file__), "playmats")
+        try:
+            files = [f for f in os.listdir(playmats_dir) if os.path.isfile(os.path.join(playmats_dir, f)) and f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        except Exception:
+            files = []
+
+        if not files:
+            self.playmat_choice = None
+            return
+
+        # If there's only one, choose it silently
+        if len(files) == 1:
+            self.playmat_choice = files[0]
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Kies playmat")
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        container = tk.Frame(dlg)
+        container.pack(padx=12, pady=12)
+
+        list_frame = tk.Frame(container)
+        list_frame.pack(side=tk.LEFT, fill=tk.Y)
+
+        lbl = tk.Label(list_frame, text="Kies een playmat:", font=("Arial", 12))
+        lbl.pack(anchor="w")
+
+        listbox = tk.Listbox(list_frame, height=min(10, len(files)), selectmode=tk.SINGLE)
+        for f in files:
+            listbox.insert(tk.END, f)
+        listbox.pack(padx=(0, 12), pady=6)
+        listbox.select_set(0)
+
+        # Preview area
+        preview_frame = tk.Frame(container, bd=1, relief=tk.SUNKEN, width=320, height=200)
+        preview_frame.pack(side=tk.LEFT, padx=(6, 0))
+        preview_frame.pack_propagate(False)
+        preview_label = tk.Label(preview_frame)
+        preview_label.pack(expand=True)
+
+        # Helper to load and show thumbnail
+        def show_preview_for(index):
+            try:
+                fname = files[index]
+                path = os.path.join(playmats_dir, fname)
+                img = Image.open(path)
+                # Resize preserving aspect ratio to fit preview size
+                max_w, max_h = 320 - 8, 200 - 8
+                img.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                # store reference on dialog to avoid GC
+                dlg._preview_photo = photo
+                preview_label.config(image=photo)
+            except Exception:
+                preview_label.config(image='')
+
+        # Initial preview
+        show_preview_for(0)
+
+        # Update preview when selection changes
+        def on_select(evt):
+            sel = listbox.curselection()
+            if not sel:
+                return
+            show_preview_for(sel[0])
+
+        listbox.bind('<<ListboxSelect>>', on_select)
+
+        btn_frame = tk.Frame(dlg)
+        btn_frame.pack(pady=(6, 6))
+
+        def _on_ok():
+            sel = listbox.curselection()
+            if sel:
+                self.playmat_choice = files[sel[0]]
+            else:
+                self.playmat_choice = files[0]
+            dlg.destroy()
+
+        def _on_cancel():
+            self.playmat_choice = None
+            dlg.destroy()
+
+        ok_btn = tk.Button(btn_frame, text="OK", width=10, command=_on_ok)
+        ok_btn.pack(side=tk.LEFT, padx=6)
+        cancel_btn = tk.Button(btn_frame, text="Annuleer", width=10, command=_on_cancel)
+        cancel_btn.pack(side=tk.LEFT, padx=6)
+
+        # Center dialog over root
+        self.root.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() // 2) - (dlg.winfo_reqwidth() // 2)
+        y = self.root.winfo_rooty() + (self.root.winfo_height() // 2) - (dlg.winfo_reqheight() // 2)
+        try:
+            dlg.geometry(f"+{x}+{y}")
+        except Exception:
+            pass
+
+        self.root.wait_window(dlg)
 
     def _resize_playmat(self, event=None, initial=False):
         if not self.playmat_original:
@@ -119,6 +249,9 @@ class BlackjackGUI:
         player_label.pack()
         self.player_frame = tk.Frame(self.player_container, bg="#1a1a1a")
         self.player_frame.pack()
+        # Placeholder for player's bet chip image (shown when player clicks a chip)
+        self.player_bet_label = tk.Label(self.player_container, bg="#1a1a1a")
+        self.player_bet_label.pack(pady=(6, 0))
         self.player_window = self.canvas.create_window(600, 720, window=self.player_container, anchor="n")
 
         self.npc_container = tk.Frame(self.canvas, bg="#1a1a1a")
@@ -126,11 +259,25 @@ class BlackjackGUI:
         npc_label.pack()
         self.npc_frame = tk.Frame(self.npc_container, bg="#1a1a1a")
         self.npc_frame.pack()
+        # Placeholder for NPC's bet chip image
+        self.npc_bet_label = tk.Label(self.npc_container, bg="#1a1a1a")
+        self.npc_bet_label.pack(pady=(6, 0))
         self.npc_window = self.canvas.create_window(1000, 720, window=self.npc_container, anchor="n")
 
         # Bottom control panel below the playmat (outside canvas)
         bottom_panel = tk.Frame(self.root, bg="#111111")
         bottom_panel.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Result banner (replaces modal popup) - initially hidden
+        self.result_banner = tk.Label(
+            bottom_panel,
+            text="",
+            bg="#111111",
+            fg="white",
+            font=("Arial", 12, "bold"),
+            pady=6
+        )
+        self.result_banner.pack(side=tk.TOP, fill=tk.X)
 
         # Betting and info stacked center
         info_frame = tk.Frame(bottom_panel, bg="#1a1a1a")
@@ -159,18 +306,42 @@ class BlackjackGUI:
 
         bet_buttons_frame = tk.Frame(bottom_panel, bg="#1a1a1a")
         bet_buttons_frame.pack(pady=6)
-        for amount in [1, 2, 5, 10, 20, 50]:
-            btn = tk.Button(
-                bet_buttons_frame,
-                text=f"€{amount}",
-                command=lambda a=amount: self.set_bet(a),
-                bg="#4CAF50",
-                fg="black",
-                font=("Arial", 11, "bold"),
-                width=6,
-                height=1
-            )
-            btn.pack(side=tk.LEFT, padx=4)
+        self.chip_images = {}
+        chip_defs = [1, 2, 5, 10, 20, 50]
+        for amount in chip_defs:
+            chip_path = os.path.join(os.path.dirname(__file__), "chips", f"{amount}_Euro.png")
+            img = None
+            if os.path.isfile(chip_path):
+                try:
+                    chip_img = Image.open(chip_path).resize((60, 60), Image.Resampling.LANCZOS)
+                    img = ImageTk.PhotoImage(chip_img)
+                    self.chip_images[amount] = img
+                except Exception:
+                    img = None
+            if img:
+                btn = tk.Button(
+                    bet_buttons_frame,
+                    image=img,
+                    command=lambda a=amount: self.set_bet(a),
+                    bg="#1a1a1a",
+                    activebackground="#1a1a1a",
+                    bd=0,
+                    highlightthickness=0,
+                    width=60,
+                    height=60
+                )
+            else:
+                btn = tk.Button(
+                    bet_buttons_frame,
+                    text=f"€{amount}",
+                    command=lambda a=amount: self.set_bet(a),
+                    bg="#4CAF50",
+                    fg="black",
+                    font=("Arial", 11, "bold"),
+                    width=6,
+                    height=1
+                )
+            btn.pack(side=tk.LEFT, padx=6)
 
         buttons_frame = tk.Frame(bottom_panel, bg="#1a1a1a")
         buttons_frame.pack(pady=8)
@@ -227,18 +398,7 @@ class BlackjackGUI:
         )
         self.double_btn.pack(side=tk.LEFT, padx=6)
 
-        self.reveal_btn = tk.Button(
-            buttons_frame,
-            text="Toon Dealer",
-            command=self.on_reveal_dealer,
-            bg="#9C27B0",
-            fg="black",
-            font=("Arial", 12, "bold"),
-            width=12,
-            height=1,
-            state=tk.DISABLED
-        )
-        self.reveal_btn.pack(side=tk.LEFT, padx=6)
+        # Reveal button removed per user request; not created
     
     def set_bet(self, amount):
         """Set a fixed bet amount (not increment)"""
@@ -246,10 +406,48 @@ class BlackjackGUI:
             self.human_bet = amount
             self.npc_bet = self.npc.recommended_bet()
             self._update_bet_display()
+            # Show chip images for player and NPC bets
+            try:
+                self._show_bet_chips(self.human_bet, self.npc_bet)
+            except Exception:
+                pass
             # Auto-start the game after bet is placed
             self.start_round()
         else:
             messagebox.showwarning("Waarschuwing", "Er is al een spel bezig!")
+
+    def _show_bet_chips(self, human_amount, npc_amount):
+        """Display chip images (or text) next to player and NPC based on bet amounts."""
+        # Player chip
+        img = self.chip_images.get(human_amount)
+        if img:
+            self.player_bet_label.config(image=img, text='')
+            self.player_bet_label._img = img
+        else:
+            self.player_bet_label.config(image='', text=f"€{human_amount}", fg="#FFD700", font=("Arial", 10, "bold"))
+
+        # NPC chip
+        img2 = self.chip_images.get(npc_amount)
+        if img2:
+            self.npc_bet_label.config(image=img2, text='')
+            self.npc_bet_label._img = img2
+        else:
+            self.npc_bet_label.config(image='', text=f"€{npc_amount}", fg="#FFD700", font=("Arial", 10, "bold"))
+
+    def _clear_bet_chips(self):
+        """Clear displayed bet chips."""
+        try:
+            self.player_bet_label.config(image='', text='')
+            if hasattr(self.player_bet_label, '_img'):
+                delattr(self.player_bet_label, '_img')
+        except Exception:
+            pass
+        try:
+            self.npc_bet_label.config(image='', text='')
+            if hasattr(self.npc_bet_label, '_img'):
+                delattr(self.npc_bet_label, '_img')
+        except Exception:
+            pass
     
     def _update_bet_display(self):
         """Update the bet display label"""
@@ -287,6 +485,7 @@ class BlackjackGUI:
         self.npc_money -= self.npc_bet
         self._update_money_display()
         
+        
         # Deal initial cards
         self.human_hand = Hand()
         self.dealer_hand = Hand()
@@ -308,6 +507,7 @@ class BlackjackGUI:
         self.stand_btn.config(state=tk.NORMAL)
         self.double_btn.config(state=tk.NORMAL)
         self.new_round_btn.config(state=tk.DISABLED)
+        # reveal button removed — dealer will be revealed automatically when round finishes
         
         # Check for blackjacks
         if self.human_hand.is_blackjack():
@@ -350,10 +550,7 @@ class BlackjackGUI:
             else:
                 self.on_stand()
     
-    def on_reveal_dealer(self):
-        """Reveal dealer's hidden card and finish the round"""
-        self.reveal_btn.config(state=tk.DISABLED)
-        self._finish_round()
+    # Reveal button removed; dealer reveals when round finishes
     
     def _finish_round_after_player(self):
         """Called when player is done (stand/bust)"""
@@ -377,14 +574,46 @@ class BlackjackGUI:
         
         # Settle bets
         self._settle()
+
+        # Show result pop-up summarizing human and AI outcome
+        try:
+            player_value = self.human_hand.best_value()
+            dealer_value = self.dealer_hand.best_value()
+            npc_value = self.npc_hand.best_value()
+
+            def _result_label(value, dealer_value):
+                if value > 21:
+                    return "LOSS (Verloren)"
+                if dealer_value > 21:
+                    return "WIN (Gewonnen)"
+                if value > dealer_value:
+                    return "WIN (Gewonnen)"
+                if value == dealer_value:
+                    return "PUSH (Gelijkspel)"
+                return "LOSS (Verloren)"
+
+            human_result = _result_label(player_value, dealer_value)
+            npc_result = _result_label(npc_value, dealer_value)
+
+            # Show result in the banner instead of a modal popup
+            msg = f"Jij: {human_result} | AI: {npc_result} — Jouw geld: €{self.human_money} | AI geld: €{self.npc_money}"
+            self._show_round_banner(human_result, npc_result, msg)
+        except Exception:
+            # Don't let a popup failure interrupt the game flow
+            pass
         
         # End of round
         self.game_over = True
         self.hit_btn.config(state=tk.DISABLED)
         self.stand_btn.config(state=tk.DISABLED)
         self.double_btn.config(state=tk.DISABLED)
-        self.reveal_btn.config(state=tk.DISABLED)
+        # reveal button removed
         self.new_round_btn.config(state=tk.NORMAL)
+        # Clear bet chips after round ends
+        try:
+            self._clear_bet_chips()
+        except Exception:
+            pass
         
         self._refresh_board()
     
@@ -433,6 +662,30 @@ class BlackjackGUI:
             self.npc_money += self.npc_bet
         
         self._update_money_display()
+
+    def _show_round_banner(self, human_result, npc_result, text):
+        """Display the round result in the in-UI banner with color coding and auto-hide."""
+        # Choose color based on human result
+        color_map = {
+            'WIN (Gewonnen)': '#2E7D32',  # green
+            'LOSS (Verloren)': '#C62828',  # red
+            'PUSH (Gelijkspel)': '#F9A825',  # amber
+        }
+        bg = color_map.get(human_result, '#333333')
+        try:
+            self.result_banner.config(text=text, bg=bg)
+            # set foreground contrast
+            fg = 'white' if human_result != 'PUSH (Gelijkspel)' else 'black'
+            self.result_banner.config(fg=fg)
+            # Auto-hide after 4 seconds
+            try:
+                if hasattr(self, '_banner_after_id') and self._banner_after_id:
+                    self.root.after_cancel(self._banner_after_id)
+            except Exception:
+                pass
+            self._banner_after_id = self.root.after(4000, lambda: self.result_banner.config(text='', bg='#111111'))
+        except Exception:
+            pass
     
     def _refresh_board(self):
         """Refresh all card displays"""
@@ -453,9 +706,13 @@ class BlackjackGUI:
         """Render cards for a given hand in a frame"""
         if hand is None:
             return
-        
-        for card in hand.cards:
-            card_widget = CardWidget(frame, card)
+
+        for idx, card in enumerate(hand.cards):
+            # If rendering dealer and the round is ongoing, hide the dealer's second card
+            if hand is self.dealer_hand and (not self.game_over) and idx == 1:
+                card_widget = CardWidget(frame, card, hidden=True)
+            else:
+                card_widget = CardWidget(frame, card)
             card_widget.pack(side=tk.LEFT, padx=5)
 
 
