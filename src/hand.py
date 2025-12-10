@@ -18,9 +18,10 @@ class Hand:
         """Return all possible hand values considering Aces as 1 or 11."""
         values = [0]
         for c in self.cards:
-            if c in ("J", "Q", "K"):
+            r = parse_card(c)
+            if r in ("J", "Q", "K"):
                 add = 10
-            elif c == "A":
+            elif r == "A":
                 # Ace as 1 or 11
                 new = []
                 for v in values:
@@ -29,7 +30,7 @@ class Hand:
                 values = new
                 continue
             else:
-                add = int(c)
+                add = int(r)
             values = [v + add for v in values]
         return sorted(set(values))
 

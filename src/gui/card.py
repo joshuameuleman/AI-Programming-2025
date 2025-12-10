@@ -50,14 +50,10 @@ class CardImageLoader:
         return str(suit).replace(' ', '_').lower()
 
     def _fallback_suits(self, normalized_suit: str):
-        # Prefer same-color backups when a suit asset is missing.
-        if normalized_suit in ('hearts', 'heart'):
-            return ['diamonds']
-        if normalized_suit in ('diamonds', 'diamond'):
+        """Fallback suits per color family (red->hearts, black->spades)."""
+        if normalized_suit in ('hearts', 'heart', 'diamonds', 'diamond'):
             return ['hearts']
-        if normalized_suit in ('spades', 'spade'):
-            return ['clubs']
-        if normalized_suit in ('clubs', 'club'):
+        if normalized_suit in ('spades', 'spade', 'clubs', 'club'):
             return ['spades']
         return []
 
@@ -84,10 +80,24 @@ class CardImageLoader:
 
         s_norm = self._normalize_suit(suit)
         for name in self._candidates(rank, suit):
-            paths = [
-                os.path.join(self.assets_dir, name),
-                os.path.join(self.assets_dir, s_norm, name) if s_norm else None,
-            ]
+            # Try base folder and suit-specific folders derived from both original and candidate name
+            suit_from_name = None
+            if "_of_" in name:
+                suit_from_name = name.split("_of_")[-1].replace(".png", "")
+            elif "_" in name:
+                # e.g. Ace_spades.png
+                suit_from_name = name.split("_")[-1].replace(".png", "")
+
+            folders = [None, s_norm]
+            if suit_from_name:
+                folders.append(suit_from_name)
+
+            paths = []
+            for folder in folders:
+                if folder:
+                    paths.append(os.path.join(self.assets_dir, folder, name))
+                paths.append(os.path.join(self.assets_dir, name))
+
             for path in [p for p in paths if p]:
                 if os.path.isfile(path):
                     if _HAS_PIL:
@@ -145,10 +155,10 @@ class CardImageLoader:
 
 
 class CardWidget(tk.Frame):
-    """Widget voor kaartweergave met vaste kadergrootte."""
+    """Widget voor kaartweergave zonder witte rand."""
 
-    def __init__(self, master, card, assets_dir: Optional[str] = None, image_size=(110, 165), box_size=(140, 200), hidden: bool = False, **kwargs):
-        super().__init__(master, width=box_size[0], height=box_size[1], **kwargs)
+    def __init__(self, master, card, assets_dir: Optional[str] = None, image_size=(110, 165), box_size=(110, 165), hidden: bool = False, **kwargs):
+        super().__init__(master, width=box_size[0], height=box_size[1], bg="#1a1a1a", highlightthickness=0, **kwargs)
         self.pack_propagate(False)
         self.card = card
         self.image_size = image_size
@@ -181,7 +191,7 @@ class CardWidget(tk.Frame):
         if self.hidden:
             img = self.loader.load_back(size=self.image_size)
             if img:
-                lbl = tk.Label(self, image=img, width=self.box_size[0], height=self.box_size[1], bd=0)
+                lbl = tk.Label(self, image=img, bd=0, highlightthickness=0, bg="#1a1a1a")
                 lbl.pack(fill='both', expand=True)
                 self._image_ref = img
                 return
@@ -192,11 +202,11 @@ class CardWidget(tk.Frame):
             img = self.loader.load(rank, suit, size=self.image_size)
 
         if img:
-            lbl = tk.Label(self, image=img, width=self.box_size[0], height=self.box_size[1], bd=0)
+            lbl = tk.Label(self, image=img, bd=0, highlightthickness=0, bg="#1a1a1a")
             lbl.pack(fill='both', expand=True)
             self._image_ref = img
         else:
-            canvas = tk.Canvas(self, width=self.box_size[0], height=self.box_size[1], highlightthickness=0)
+            canvas = tk.Canvas(self, width=self.box_size[0], height=self.box_size[1], highlightthickness=0, bg="#1a1a1a")
             canvas.create_rectangle(4, 4, self.box_size[0]-4, self.box_size[1]-4, fill='white', outline='black')
             text = f"{rank or '?'}\n{str(suit) if suit else ''}"
             canvas.create_text(self.box_size[0]//2, self.box_size[1]//2, text=text, font=('Arial', 11))

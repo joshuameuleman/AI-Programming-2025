@@ -1,337 +1,472 @@
-"""
-Interactieve Blackjack GUI met tkinter.
+#gemaakt door Joshua Meuleman
 
-- Hergebruikt bestaande game-logica (Deck, Dealer, Hand, NPC counting).
-- Toont luxe kaartafbeeldingen uit `src/gui/full_art_luxe_kaarten` (fallback naar tekst als niet beschikbaar).
-- Ondersteunt hit/stand/double voor één hand per speler (geen split/insurance).
-
-Start vanuit project-root:
-    python -m src.gui.blackjack_gui
-"""
 import tkinter as tk
-from tkinter import ttk, messagebox
-from typing import List, Dict, Any
-
+from tkinter import messagebox
+from PIL import Image, ImageTk
+import os
 from src.game import Game
 from src.dealer import Dealer
-from src.hand import Hand, parse_card, value
+from src.hand import Hand, parse_card
 from src.ai.npc import NPC
+from src.gui.card import CardWidget
 from src import deck
-from .card import CardWidget
 
 
-class BlackjackGUI(tk.Tk):
-    def __init__(self):
-        super().__init__()
-        self.title("Blackjack GUI")
-        try:
-            # windowed fullscreen (maximized window)
-            self.state("zoomed")
-        except Exception:
-            self.geometry("1280x800")
-
-        # Core game state
+class BlackjackGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Blackjack AI")
+        self.root.state("zoomed")  # fullscreen-like on Windows
+        self.root.configure(bg="#1a1a1a")
+        
+        # Game state
         self.game = Game()
-        self.dealer: Dealer = Dealer()
-        self.npc = NPC()
-        self.human_hand = Hand()
-        self.npc_hand = Hand()
-        self.dealer_cards_raw: List[Dict[str, Any]] = []
-        self.human_cards_raw: List[Dict[str, Any]] = []
-        self.npc_cards_raw: List[Dict[str, Any]] = []
-        self.round_active = False
-        self.player_done = False
-
-        # Bankroll / bets
-        self.human_bankroll = 100.0
-        self.npc_bankroll = 100.0
-        self.human_bet = float(self.game.min_bet)
-        self.npc_bet = float(self.game.min_bet)
-
-        # register NPC observer once
-        deck.register_draw_observer(self.npc.observe_card)
-        self.npc.start_shoe(self.game.num_decks)
         self.game.start_shoe()
-
-        self._build_ui()
-        self._update_status()
-
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-
-    # UI helpers
-    def _build_ui(self):
-        self.style = ttk.Style()
-        self.style.configure("TButton", padding=6, font=("Segoe UI", 11))
-        self.style.configure("TLabel", font=("Segoe UI", 11))
-
-        top = ttk.Frame(self)
-        top.pack(fill="x", padx=10, pady=6)
-
-        self.status_var = tk.StringVar(value="Welkom! Druk op 'Nieuwe ronde'.")
-        ttk.Label(top, textvariable=self.status_var).pack(side="left")
-
-        # Dealer area
-        dealer_frame = ttk.LabelFrame(self, text="Dealer")
-        dealer_frame.pack(fill="x", padx=10, pady=6)
-        self.dealer_cards_frame = ttk.Frame(dealer_frame)
-        self.dealer_cards_frame.pack(fill="x", padx=6, pady=4)
-
-        # Player area
-        player_frame = ttk.LabelFrame(self, text="Jij")
-        player_frame.pack(fill="x", padx=10, pady=6)
-        info_row = ttk.Frame(player_frame)
-        info_row.pack(fill="x", padx=6, pady=2)
-        self.bankroll_var = tk.StringVar()
-        ttk.Label(info_row, textvariable=self.bankroll_var).pack(side="left")
-        ttk.Label(info_row, text="Inzet:").pack(side="left", padx=(10, 2))
-        self.bet_var = tk.StringVar(value=str(int(self.game.min_bet)))
-        self.bet_entry = ttk.Entry(info_row, textvariable=self.bet_var, width=7)
-        self.bet_entry.pack(side="left")
-
-        self.player_cards_frame = ttk.Frame(player_frame)
-        self.player_cards_frame.pack(fill="x", padx=6, pady=4)
-
-        # NPC area (kaarten verborgen tot speler klaar is)
-        npc_frame = ttk.LabelFrame(self, text="NPC")
-        npc_frame.pack(fill="x", padx=10, pady=6)
-        self.npc_cards_frame = ttk.Frame(npc_frame)
-        self.npc_cards_frame.pack(fill="x", padx=6, pady=4)
-
-        # Controls
-        controls = ttk.Frame(self)
-        controls.pack(fill="x", padx=10, pady=8)
-
-        self.new_round_btn = ttk.Button(controls, text="Nieuwe ronde", command=self.start_round)
-        self.new_round_btn.pack(side="left")
-
-        self.hit_btn = ttk.Button(controls, text="Hit", command=self.on_hit, state="disabled")
-        self.hit_btn.pack(side="left", padx=4)
-        self.stand_btn = ttk.Button(controls, text="Stand", command=self.on_stand, state="disabled")
-        self.stand_btn.pack(side="left", padx=4)
-        self.double_btn = ttk.Button(controls, text="Double", command=self.on_double, state="disabled")
-        self.double_btn.pack(side="left", padx=4)
-
-        self.reveal_btn = ttk.Button(controls, text="Toon dealer", command=self._reveal, state="disabled")
-        self.reveal_btn.pack(side="left", padx=(20, 4))
-
-    def _clear_cards(self):
-        for f in (self.dealer_cards_frame, self.player_cards_frame, self.npc_cards_frame):
-            for child in f.winfo_children():
-                child.destroy()
-
-    def _render_cards(self, frame, cards: List[Dict[str, Any]], hide_second: bool = False):
-        for idx, card in enumerate(cards):
-            hidden = hide_second and idx == 1
-            CardWidget(frame, card, hidden=hidden).pack(side="left", padx=3)
-
-    def _update_status(self):
-        self.bankroll_var.set(f"Bankroll: {self.human_bankroll:.1f}")
-
-    def _set_buttons(self, active: bool):
-        state = "normal" if active else "disabled"
-        self.hit_btn.config(state=state)
-        self.stand_btn.config(state=state)
-        self.double_btn.config(state=state)
-        self.reveal_btn.config(state="normal" if not active else "disabled")
-
-    def start_round(self):
-        if self.round_active:
-            return
-        if self.human_bankroll < self.game.min_bet:
-            messagebox.showinfo("Einde", "Bankroll is leeg.")
-            return
-
-        # reshuffle if needed
-        if self.game.should_reshuffle():
-            self.game.start_shoe()
-            self.npc.start_shoe(self.game.num_decks)
-            self.status_var.set("Nieuwe shoe geschud.")
-
-        # reset per-round state
-        self.player_done = False
-        self.round_active = True
-        self.human_hand = Hand()
-        self.npc_hand = Hand()
         self.dealer = Dealer()
-        self.dealer_cards_raw = []
-        self.human_cards_raw = []
-        self.npc_cards_raw = []
+        self.npc = NPC()
+        self.npc.start_shoe(self.game.num_decks)
+        deck.register_draw_observer(self.npc.observe_card)
+        
+        # Player state
+        self.human_hand = None
+        self.dealer_hand = None
+        self.npc_hand = None
+        self.human_bet = 0
+        self.npc_bet = 0
+        self.game_over = True
+        self.human_money = 100
+        self.npc_money = 100
+        
+        # Build UI
+        self._build_ui()
+        self._load_playmat()
+        
+    def _load_playmat(self):
+        """Load playmat and prepare for responsive scaling."""
+        playmat_path = os.path.join(
+            os.path.dirname(__file__),
+            "playmats",
+            "black&gold.png"
+        )
 
-        try:
-            bet_val = int(self.bet_var.get())
-        except Exception:
-            bet_val = self.game.min_bet
-        bet_val = max(self.game.min_bet, bet_val)
-        bet_val = min(int(self.human_bankroll), bet_val)
-        if bet_val <= 0:
-            bet_val = self.game.min_bet
-        self.human_bet = float(bet_val)
+        self.playmat_original = None
+        if os.path.exists(playmat_path):
+            try:
+                self.playmat_original = Image.open(playmat_path)
+            except Exception as e:
+                print(f"Error loading playmat: {e}")
 
-        # npc bet
-        npc_bet = max(self.game.min_bet, int(self.npc.recommended_bet()))
-        npc_bet = min(int(self.npc_bankroll), npc_bet)
-        self.npc_bet = float(npc_bet)
-        self.show_npc_cards = True
+        if self.playmat_original:
+            self._resize_playmat(initial=True)
+            # update image on canvas resize
+            self.canvas.bind("<Configure>", self._resize_playmat)
 
-        # deal initial cards
-        for _ in range(2):
-            self._deal_to("human")
-            self._deal_to("npc")
-            self._deal_to("dealer")
-
-        self.status_var.set("Kies je actie: hit/stand/double.")
-        self._set_buttons(True)
-        self._refresh_board(hide_dealer_hole=True)
-        self._update_status()
-
-        if self.human_hand.is_blackjack():
-            self.status_var.set("Blackjack! Wacht op dealer.")
-            self.player_done = True
-            self.after(200, self._finish_round_after_player)
-
-    def _deal_to(self, who: str):
-        card = self.game.deal_card()
-        rank = parse_card(card)
-        if who == "human":
-            self.human_cards_raw.append(card)
-            self.human_hand.add(rank)
-        elif who == "npc":
-            self.npc_cards_raw.append(card)
-            self.npc_hand.add(rank)
+    def _resize_playmat(self, event=None, initial=False):
+        if not self.playmat_original:
+            return
+        # Determine target size from canvas
+        if event is not None and not initial:
+            w, h = event.width, event.height
         else:
-            self.dealer_cards_raw.append(card)
-            self.dealer.receive_card(card)
-        return card
-
-    def on_hit(self):
-        if not self.round_active or self.player_done:
+            w = self.canvas.winfo_width() or self.playmat_original.width
+            h = self.canvas.winfo_height() or self.playmat_original.height
+        if w < 50 or h < 50:
             return
-        self._deal_to("human")
-        self._refresh_board(hide_dealer_hole=True)
-        if self.human_hand.is_bust():
-            self.status_var.set("Busted! Dealer speelt af.")
-            self.player_done = True
-            self.after(200, self._finish_round_after_player)
-
-    def on_stand(self):
-        if not self.round_active or self.player_done:
-            return
-        self.player_done = True
-        self.status_var.set("Speler staat. NPC en dealer spelen.")
-        self._finish_round_after_player()
-
-    def on_double(self):
-        if not self.round_active or self.player_done:
-            return
-        if len(self.human_hand.cards) != 2:
-            return
-        if self.human_bankroll < self.human_bet * 2:
-            messagebox.showinfo("Niet genoeg bankroll", "Onvoldoende bankroll om te verdubbelen.")
-            return
-        self.human_bet *= 2
-        self._deal_to("human")
-        self._refresh_board(hide_dealer_hole=True)
-        self.player_done = True
-        self.status_var.set("Double uitgevoerd. NPC en dealer spelen.")
-        self.after(200, self._finish_round_after_player)
-
-    def _npc_turn(self):
-        dealer_upcard = self.dealer_cards_raw[0] if self.dealer_cards_raw else None
-        actions = []
-        while True:
-            action = self.npc.choose_action(self.npc_hand.cards, dealer_upcard)
-            actions.append(action)
-            if action == "hit":
-                self._deal_to("npc")
-                if self.npc_hand.is_bust():
-                    break
-                continue
-            if action == "double":
-                self.npc_bet = min(self.npc_bet * 2, self.npc_bankroll)
-                self._deal_to("npc")
-                break
-            break
-        return ",".join(actions)
-
-    def _dealer_turn(self):
-        while True:
-            total, usable = value(self.dealer.hand.cards)
-            if total < 17:
-                self._deal_to("dealer")
-                continue
-            if total == 17 and not self.dealer.stand_on_soft_17 and usable:
-                self._deal_to("dealer")
-                continue
-            break
-
-    def _finish_round_after_player(self):
-        if not self.round_active:
-            return
-        npc_actions = self._npc_turn()
-        self.status_var.set(f"NPC: {npc_actions or 'stand'}. Dealer speelt...")
-        self._dealer_turn()
-        self._settle()
-        self._refresh_board(hide_dealer_hole=False)
-        self._set_buttons(False)
-        self.round_active = False
-
-    def _settle_hand(self, hand: Hand, bet: float, dealer_blackjack: bool, dealer_value: int) -> float:
-        hand_blackjack = hand.is_blackjack()
-        hand_bust = hand.is_bust()
-        if hand_blackjack and not dealer_blackjack:
-            return 1.5 * bet
-        if hand_bust:
-            return -bet
-        if dealer_blackjack and hand_blackjack:
-            return 0.0
-        if dealer_blackjack and not hand_blackjack:
-            return -bet
-        if dealer_value > 21:
-            return bet
-        player_total = hand.best_value()
-        if player_total > dealer_value:
-            return bet
-        if player_total == dealer_value:
-            return 0.0
-        return -bet
-
-    def _settle(self):
-        dealer_blackjack = self.dealer.is_blackjack()
-        dealer_value = self.dealer.best_value()
-
-        player_net = self._settle_hand(self.human_hand, self.human_bet, dealer_blackjack, dealer_value)
-        npc_net = self._settle_hand(self.npc_hand, self.npc_bet, dealer_blackjack, dealer_value)
-
-        self.human_bankroll += player_net
-        self.npc_bankroll += npc_net
-
-        summary = f"Jij: {player_net:+.1f} | Dealer={dealer_value}"
-        self.status_var.set(summary)
-        self._update_status()
-
-    def _refresh_board(self, hide_dealer_hole: bool):
-        self._clear_cards()
-        self._render_cards(self.dealer_cards_frame, self.dealer_cards_raw, hide_second=hide_dealer_hole)
-        self._render_cards(self.player_cards_frame, self.human_cards_raw, hide_second=False)
-        self._render_cards(self.npc_cards_frame, self.npc_cards_raw, hide_second=False)
-
-    def _reveal(self):
-        if self.round_active:
-            return
-        self._refresh_board(hide_dealer_hole=False)
-
-    def _on_close(self):
         try:
-            deck.unregister_draw_observer(self.npc.observe_card)
+            img = self.playmat_original.resize((w, h), Image.Resampling.LANCZOS)
         except Exception:
+            img = self.playmat_original
+        self.playmat_photo = ImageTk.PhotoImage(img)
+        if hasattr(self, "_playmat_image_id"):
+            self.canvas.itemconfigure(self._playmat_image_id, image=self.playmat_photo)
+        else:
+            self._playmat_image_id = self.canvas.create_image(0, 0, image=self.playmat_photo, anchor="nw")
+        # Reposition card zones relative to current canvas size to avoid clipping
+        self._reposition_card_zones(w, h)
+
+    def _reposition_card_zones(self, w, h):
+        # Ratios based on original 1600x900 layout: dealer (0.5,0.13), player (0.375,1), npc (0.625,0.8)
+        dealer_x, dealer_y = 0.5 * w, 0.13 * h
+        player_x, player_y = 0.375 * w, 0.6 * h
+        npc_x, npc_y = 0.625 * w, 0.6 * h
+        if hasattr(self, "dealer_window"):
+            self.canvas.coords(self.dealer_window, dealer_x, dealer_y)
+        if hasattr(self, "player_window"):
+            self.canvas.coords(self.player_window, player_x, player_y)
+        if hasattr(self, "npc_window"):
+            self.canvas.coords(self.npc_window, npc_x, npc_y)
+    
+    def _build_ui(self):
+        """Build the main UI with canvas and card positions"""
+        # Main canvas with playmat background
+        self.canvas = tk.Canvas(
+            self.root,
+            bg="#1a1a1a",
+            highlightthickness=0
+        )
+        self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        
+        # Card containers with labels
+        self.dealer_container = tk.Frame(self.canvas, bg="#1a1a1a")
+        dealer_label = tk.Label(self.dealer_container, text="Dealer", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
+        dealer_label.pack()
+        self.dealer_frame = tk.Frame(self.dealer_container, bg="#1a1a1a")
+        self.dealer_frame.pack()
+        self.dealer_window = self.canvas.create_window(800, 120, window=self.dealer_container, anchor="n")
+
+        self.player_container = tk.Frame(self.canvas, bg="#1a1a1a")
+        player_label = tk.Label(self.player_container, text="Jij", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
+        player_label.pack()
+        self.player_frame = tk.Frame(self.player_container, bg="#1a1a1a")
+        self.player_frame.pack()
+        self.player_window = self.canvas.create_window(600, 720, window=self.player_container, anchor="n")
+
+        self.npc_container = tk.Frame(self.canvas, bg="#1a1a1a")
+        npc_label = tk.Label(self.npc_container, text="AI", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
+        npc_label.pack()
+        self.npc_frame = tk.Frame(self.npc_container, bg="#1a1a1a")
+        self.npc_frame.pack()
+        self.npc_window = self.canvas.create_window(1000, 720, window=self.npc_container, anchor="n")
+
+        # Bottom control panel below the playmat (outside canvas)
+        bottom_panel = tk.Frame(self.root, bg="#111111")
+        bottom_panel.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Betting and info stacked center
+        info_frame = tk.Frame(bottom_panel, bg="#1a1a1a")
+        info_frame.pack(pady=4)
+        bet_label = tk.Label(info_frame, text="Bedrag:", bg="#1a1a1a", fg="white", font=("Arial", 10))
+        bet_label.pack(side=tk.LEFT, padx=6)
+        self.bet_display = tk.Label(
+            info_frame,
+            text=f"Jouw inzet: €{self.human_bet} | NPC inzet: €{self.npc_bet}",
+            bg="#1a1a1a",
+            fg="#FFD700",
+            font=("Arial", 12, "bold")
+        )
+        self.bet_display.pack(side=tk.LEFT, padx=6)
+
+        money_frame = tk.Frame(bottom_panel, bg="#1a1a1a")
+        money_frame.pack(pady=4)
+        self.money_display = tk.Label(
+            money_frame,
+            text=f"Jouw geld: €{self.human_money} | NPC geld: €{self.npc_money}",
+            bg="#1a1a1a",
+            fg="#90EE90",
+            font=("Arial", 11)
+        )
+        self.money_display.pack()
+
+        bet_buttons_frame = tk.Frame(bottom_panel, bg="#1a1a1a")
+        bet_buttons_frame.pack(pady=6)
+        for amount in [1, 2, 5, 10, 20, 50]:
+            btn = tk.Button(
+                bet_buttons_frame,
+                text=f"€{amount}",
+                command=lambda a=amount: self.set_bet(a),
+                bg="#4CAF50",
+                fg="black",
+                font=("Arial", 11, "bold"),
+                width=6,
+                height=1
+            )
+            btn.pack(side=tk.LEFT, padx=4)
+
+        buttons_frame = tk.Frame(bottom_panel, bg="#1a1a1a")
+        buttons_frame.pack(pady=8)
+
+        self.new_round_btn = tk.Button(
+            buttons_frame,
+            text="Nieuwe Ronde",
+            command=self.start_round,
+            bg="#4CAF50",
+            fg="black",
+            font=("Arial", 12, "bold"),
+            width=12,
+            height=1,
+            state=tk.DISABLED
+        )
+        self.new_round_btn.pack(side=tk.LEFT, padx=6)
+
+        self.hit_btn = tk.Button(
+            buttons_frame,
+            text="HIT",
+            command=self.on_hit,
+            bg="#2196F3",
+            fg="black",
+            font=("Arial", 12, "bold"),
+            width=10,
+            height=1,
+            state=tk.DISABLED
+        )
+        self.hit_btn.pack(side=tk.LEFT, padx=6)
+
+        self.stand_btn = tk.Button(
+            buttons_frame,
+            text="STAND",
+            command=self.on_stand,
+            bg="#FF9800",
+            fg="black",
+            font=("Arial", 12, "bold"),
+            width=10,
+            height=1,
+            state=tk.DISABLED
+        )
+        self.stand_btn.pack(side=tk.LEFT, padx=6)
+
+        self.double_btn = tk.Button(
+            buttons_frame,
+            text="DOUBLE",
+            command=self.on_double,
+            bg="#F44336",
+            fg="black",
+            font=("Arial", 12, "bold"),
+            width=10,
+            height=1,
+            state=tk.DISABLED
+        )
+        self.double_btn.pack(side=tk.LEFT, padx=6)
+
+        self.reveal_btn = tk.Button(
+            buttons_frame,
+            text="Toon Dealer",
+            command=self.on_reveal_dealer,
+            bg="#9C27B0",
+            fg="black",
+            font=("Arial", 12, "bold"),
+            width=12,
+            height=1,
+            state=tk.DISABLED
+        )
+        self.reveal_btn.pack(side=tk.LEFT, padx=6)
+    
+    def set_bet(self, amount):
+        """Set a fixed bet amount (not increment)"""
+        if self.game_over:  # Only allow betting when no round is active
+            self.human_bet = amount
+            self.npc_bet = self.npc.recommended_bet()
+            self._update_bet_display()
+            # Auto-start the game after bet is placed
+            self.start_round()
+        else:
+            messagebox.showwarning("Waarschuwing", "Er is al een spel bezig!")
+    
+    def _update_bet_display(self):
+        """Update the bet display label"""
+        self.bet_display.config(
+            text=f"Jouw inzet: €{self.human_bet} | NPC inzet: €{self.npc_bet}"
+        )
+    
+    def _update_money_display(self):
+        """Update the money display label"""
+        self.money_display.config(
+            text=f"Jouw geld: €{self.human_money} | NPC geld: €{self.npc_money}"
+        )
+    
+    def start_round(self):
+        """Start a new round of blackjack"""
+        if self.human_bet <= 0:
+            messagebox.showwarning("Waarschuwing", "Zet eerst een bedrag in!")
+            return
+        
+        if self.human_bet > self.human_money or self.npc_bet > self.npc_money:
+            messagebox.showerror("Fout", "Onvoldoende geld!")
+            self.human_bet = 0
+            self.npc_bet = 0
+            return
+        
+        # Reset game state
+        self.game_over = False
+        self.game = Game()
+        self.game.start_shoe()
+        self.npc.start_shoe(self.game.num_decks)
+        deck.register_draw_observer(self.npc.observe_card)
+        
+        # Deduct bets
+        self.human_money -= self.human_bet
+        self.npc_money -= self.npc_bet
+        self._update_money_display()
+        
+        # Deal initial cards
+        self.human_hand = Hand()
+        self.dealer_hand = Hand()
+        self.npc_hand = Hand()
+        
+        for _ in range(2):
+            c1 = deck.draw(self.game.shoe)
+            c2 = deck.draw(self.game.shoe)
+            c3 = deck.draw(self.game.shoe)
+            self.human_hand.add(c1)
+            self.dealer_hand.add(c2)
+            self.npc_hand.add(c3)
+        
+        # Update UI
+        self._refresh_board()
+        
+        # Enable action buttons
+        self.hit_btn.config(state=tk.NORMAL)
+        self.stand_btn.config(state=tk.NORMAL)
+        self.double_btn.config(state=tk.NORMAL)
+        self.new_round_btn.config(state=tk.DISABLED)
+        
+        # Check for blackjacks
+        if self.human_hand.is_blackjack():
+            self.on_stand()
+        elif self.npc_hand.is_blackjack():
+            self.on_stand()
+    
+    def on_hit(self):
+        """Player hits"""
+        if not self.game_over:
+            c = deck.draw(self.game.shoe)
+            self.human_hand.add(c)
+            self._refresh_board()
+            
+            if self.human_hand.is_bust():
+                self._finish_round_after_player()
+    
+    def on_stand(self):
+        """Player stands"""
+        if not self.game_over:
+            self.hit_btn.config(state=tk.DISABLED)
+            self.stand_btn.config(state=tk.DISABLED)
+            self.double_btn.config(state=tk.DISABLED)
+            self._finish_round()
+    
+    def on_double(self):
+        """Player doubles down"""
+        if not self.game_over and len(self.human_hand.cards) == 2:
+            self.human_bet *= 2
+            self.human_money -= self.human_bet // 2
+            self._update_bet_display()
+            self._update_money_display()
+            
+            c = deck.draw(self.game.shoe)
+            self.human_hand.add(c)
+            self._refresh_board()
+            
+            if self.human_hand.is_bust():
+                self._finish_round_after_player()
+            else:
+                self.on_stand()
+    
+    def on_reveal_dealer(self):
+        """Reveal dealer's hidden card and finish the round"""
+        self.reveal_btn.config(state=tk.DISABLED)
+        self._finish_round()
+    
+    def _finish_round_after_player(self):
+        """Called when player is done (stand/bust)"""
+        # Always reveal/finish immediately (dealer auto shown)
+        self.hit_btn.config(state=tk.DISABLED)
+        self.stand_btn.config(state=tk.DISABLED)
+        self.double_btn.config(state=tk.DISABLED)
+        self._finish_round()
+    
+    def _finish_round(self):
+        """Finish the round: dealer plays, settle bets"""
+        # Dealer plays out their hand
+        while self.dealer_hand.best_value() < 17:
+            c = deck.draw(self.game.shoe)
+            self.dealer_hand.add(c)
+        
+        # NPC plays out their hand (simplified)
+        while self.npc_hand.best_value() < 17:
+            c = deck.draw(self.game.shoe)
+            self.npc_hand.add(c)
+        
+        # Settle bets
+        self._settle()
+        
+        # End of round
+        self.game_over = True
+        self.hit_btn.config(state=tk.DISABLED)
+        self.stand_btn.config(state=tk.DISABLED)
+        self.double_btn.config(state=tk.DISABLED)
+        self.reveal_btn.config(state=tk.DISABLED)
+        self.new_round_btn.config(state=tk.NORMAL)
+        
+        self._refresh_board()
+    
+    def _settle(self):
+        """Settle all bets"""
+        # Player vs Dealer
+        player_value = self.human_hand.best_value()
+        dealer_value = self.dealer_hand.best_value()
+        
+        if player_value > 21:
+            # Player bust - loses bet (already deducted)
             pass
-        self.destroy()
+        elif dealer_value > 21:
+            # Dealer bust - player wins
+            if self.human_hand.is_blackjack():
+                self.human_money += int(self.human_bet * 2.5)  # 3:2 payout (1 + 1.5)
+            else:
+                self.human_money += self.human_bet * 2
+        elif player_value > dealer_value:
+            # Player wins
+            if self.human_hand.is_blackjack():
+                self.human_money += int(self.human_bet * 2.5)  # 3:2 payout
+            else:
+                self.human_money += self.human_bet * 2
+        elif player_value == dealer_value:
+            # Push (tie)
+            self.human_money += self.human_bet
+        # else: dealer_value > player_value - player loses (already deducted)
+        
+        # NPC vs Dealer (simplified)
+        npc_value = self.npc_hand.best_value()
+        
+        if npc_value > 21:
+            pass
+        elif dealer_value > 21:
+            if self.npc_hand.is_blackjack():
+                self.npc_money += int(self.npc_bet * 2.5)
+            else:
+                self.npc_money += self.npc_bet * 2
+        elif npc_value > dealer_value:
+            if self.npc_hand.is_blackjack():
+                self.npc_money += int(self.npc_bet * 2.5)
+            else:
+                self.npc_money += self.npc_bet * 2
+        elif npc_value == dealer_value:
+            self.npc_money += self.npc_bet
+        
+        self._update_money_display()
+    
+    def _refresh_board(self):
+        """Refresh all card displays"""
+        # Clear existing cards
+        for widget in self.dealer_frame.winfo_children():
+            widget.destroy()
+        for widget in self.player_frame.winfo_children():
+            widget.destroy()
+        for widget in self.npc_frame.winfo_children():
+            widget.destroy()
+        
+        # Render cards
+        self._render_cards(self.dealer_hand, self.dealer_frame)
+        self._render_cards(self.human_hand, self.player_frame)
+        self._render_cards(self.npc_hand, self.npc_frame)
+    
+    def _render_cards(self, hand, frame):
+        """Render cards for a given hand in a frame"""
+        if hand is None:
+            return
+        
+        for card in hand.cards:
+            card_widget = CardWidget(frame, card)
+            card_widget.pack(side=tk.LEFT, padx=5)
 
 
-def main():
-    app = BlackjackGUI()
-    app.mainloop()
+def run_gui():
+    """Run the Blackjack GUI"""
+    root = tk.Tk()
+    gui = BlackjackGUI(root)
+    root.mainloop()
 
 
 if __name__ == "__main__":
-    main()
+    run_gui()
+
+#gemaakt door Joshua Meuleman
