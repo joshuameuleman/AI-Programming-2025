@@ -2,6 +2,12 @@
 
 Een Blackjack-implementatie met AI-spelers, basic strategy, (optioneel) kaarttellen en een tkinter-GUI met luxe kaartafbeeldingen.
 
+## Team
+- [Joshua Meuleman](https://github.com/joshuameuleman)
+- [Robbe Lambrechts](https://github.com/lomopoio)
+- [Jamie Jones](https://github.com/JollyJones101)
+- [Alberiek Depreytere](https://github.com/AlberiekDepreytere)
+
 ## Features
 - Spelengine met shoe, dealer, spelershanden en inzetafhandeling.
 - Basic strategy beslissingen; NPC telt kaarten en past inzet aan.
