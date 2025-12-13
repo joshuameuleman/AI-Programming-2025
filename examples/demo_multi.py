@@ -1,3 +1,5 @@
+#gemaakt door Joshua Meuleman
+
 """Automatische demo: meerdere rondes tonen NPC geheugen en telling.
 
 Dit script draait een korte serie rondes zonder interactie zodat je kunt
