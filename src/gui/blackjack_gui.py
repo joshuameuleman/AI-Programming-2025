@@ -1,4 +1,4 @@
-#gemaakt door Joshua Meuleman
+#gemaakt door Joshua Meuleman klein extra door Robbe Lambrechts
 
 import tkinter as tk
 from tkinter import messagebox, simpledialog
@@ -238,15 +238,15 @@ class BlackjackGUI:
         
         # Card containers with labels
         self.dealer_container = tk.Frame(self.canvas, bg="#1a1a1a")
-        dealer_label = tk.Label(self.dealer_container, text="Dealer", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
-        dealer_label.pack()
+        self.dealer_label = tk.Label(self.dealer_container, text="Dealer", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
+        self.dealer_label.pack()
         self.dealer_frame = tk.Frame(self.dealer_container, bg="#1a1a1a")
         self.dealer_frame.pack()
         self.dealer_window = self.canvas.create_window(800, 120, window=self.dealer_container, anchor="n")
 
         self.player_container = tk.Frame(self.canvas, bg="#1a1a1a")
-        player_label = tk.Label(self.player_container, text="Jij", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
-        player_label.pack()
+        self.player_label = tk.Label(self.player_container, text="Jij", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
+        self.player_label.pack()
         self.player_frame = tk.Frame(self.player_container, bg="#1a1a1a")
         self.player_frame.pack()
         # Placeholder for player's bet chip image (shown when player clicks a chip)
@@ -255,8 +255,8 @@ class BlackjackGUI:
         self.player_window = self.canvas.create_window(600, 720, window=self.player_container, anchor="n")
 
         self.npc_container = tk.Frame(self.canvas, bg="#1a1a1a")
-        npc_label = tk.Label(self.npc_container, text="AI", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
-        npc_label.pack()
+        self.npc_label = tk.Label(self.npc_container, text="AI", bg="#1a1a1a", fg="white", font=("Arial", 12, "bold"))
+        self.npc_label.pack()
         self.npc_frame = tk.Frame(self.npc_container, bg="#1a1a1a")
         self.npc_frame.pack()
         # Placeholder for NPC's bet chip image
@@ -714,6 +714,64 @@ class BlackjackGUI:
             else:
                 card_widget = CardWidget(frame, card)
             card_widget.pack(side=tk.LEFT, padx=5)
+        
+        # Update label with hand value
+        self._update_hand_label(hand)
+    
+    def _update_hand_label(self, hand):
+        """Update the label for a hand with its total value"""
+        if hand is None:
+            return
+        
+        # Determine which label to update
+        if hand is self.dealer_hand:
+            label = self.dealer_label
+            name = "Dealer"
+            # Als de dealer's tweede kaart verborgen is (tijdens het spel), toon alleen eerste kaart
+            if not self.game_over and len(hand.cards) > 1:
+                cards_to_count = [hand.cards[0]]  # Alleen eerste kaart
+            else:
+                cards_to_count = hand.cards
+        elif hand is self.human_hand:
+            label = self.player_label
+            name = "Jij"
+            cards_to_count = hand.cards
+        elif hand is self.npc_hand:
+            label = self.npc_label
+            name = "AI"
+            cards_to_count = hand.cards
+        else:
+            return
+        
+        # Calculate hand value
+        total = 0
+        aces = 0
+        for card in cards_to_count:
+            rank = parse_card(card)
+            if rank == 'A':
+                aces += 1
+                total += 11
+            elif rank in ['K', 'Q', 'J']:
+                total += 10
+            else:
+                total += int(rank)
+        
+        # Adjust for aces
+        while total > 21 and aces > 0:
+            total -= 10
+            aces -= 1
+        
+        # Format the display text
+        # If there are aces that can be counted as 1 or 11, show both options
+        if aces > 0 and total <= 21:
+            # Show soft total (with ace as 11) and hard total (with ace as 1)
+            soft_total = total
+            hard_total = total - 10
+            text = f"{name} ({hard_total}/{soft_total})"
+        else:
+            text = f"{name} ({total})"
+        
+        label.config(text=text)
 
 
 def run_gui():
@@ -726,4 +784,4 @@ def run_gui():
 if __name__ == "__main__":
     run_gui()
 
-#gemaakt door Joshua Meuleman
+#gemaakt door Joshua Meuleman klein extra door Robbe Lambrechts
